@@ -1,67 +1,61 @@
 package br.com.lss.taskManager.service
 
-import br.com.lss.taskManager.data.Task
+import br.com.lss.taskManager.data.TaskByInstitution
 import br.com.lss.taskManager.data.request.CreateTaskRequest
 import br.com.lss.taskManager.data.request.UpdateTaskRequest
 import br.com.lss.taskManager.data.response.TaskResponse
 import br.com.lss.taskManager.exception.NotFoundException
+import br.com.lss.taskManager.repository.TaskRepository
 import br.com.lss.taskManager.util.CreateTaskRequestMapper
 import br.com.lss.taskManager.util.TaskResponseMapper
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
-import java.util.stream.Collectors
 
 @Service
 class TaskService(
-    private var tasks: List<Task> = ArrayList(),
+    private val repository: TaskRepository,
     private val taskResponseMapper: TaskResponseMapper,
     private val createTaskRequestMapper: CreateTaskRequestMapper
-
 ) {
     val notFoundMessage = "Resource not found!"
-    fun listTasks(): List<TaskResponse> {
-        return tasks.stream().map { task ->
+    fun listTasks(
+        author: String?,
+        pagination: Pageable
+    ): Page<TaskResponse> {
+        val result =
+            if (author.isNullOrBlank()) repository.findAll(pagination)
+            else repository.findByAuthorName(author, pagination)
+        return result.map { task ->
             taskResponseMapper.map(task)
-        }.collect(Collectors.toList())
+        }
     }
 
     fun getTaskById(id: Long): TaskResponse {
-        val task = tasks.stream().filter { t ->
-            t.id == id
-        }.findFirst().orElseThrow{NotFoundException(notFoundMessage)}
+        val task = repository.findById(id)
+            .orElseThrow { NotFoundException(notFoundMessage) }
         return taskResponseMapper.map(task)
     }
 
     fun register(taskRequest: CreateTaskRequest): TaskResponse {
         val task = createTaskRequestMapper.map(taskRequest)
-        task.id = tasks.size.toLong() + 1
-        tasks = tasks.plus(task)
+        repository.save(task)
         return taskResponseMapper.map(task)
     }
 
     fun update(task: UpdateTaskRequest): TaskResponse {
-        val oldTask = tasks.stream().filter { t ->
-            t.id == task.id
-        }.findFirst().orElseThrow{NotFoundException(notFoundMessage)}
-        val newTask = Task(
-            id = task.id,
-            title = task.title,
-            description = task.description,
-            subtasks = task.subTasks ?: oldTask.subtasks,
-            author = oldTask.author,
-            status = oldTask.status,
-            isVisible = oldTask.isVisible,
-            type = oldTask.type,
-            institution = oldTask.institution,
-            creationDate = oldTask.creationDate
-        )
-        tasks = tasks.minus(oldTask).plus(newTask)
-        return taskResponseMapper.map(newTask)
+        val currentTask = repository.findById(task.id)
+            .orElseThrow { NotFoundException(notFoundMessage) }
+        currentTask.title = task.title
+        currentTask.description = task.description
+        return taskResponseMapper.map(currentTask)
     }
 
     fun delete(id: Long) {
-        val task = tasks.stream().filter { t ->
-            t.id == id
-        }.findFirst().orElseThrow{NotFoundException(notFoundMessage)}
-        tasks = tasks.minus(task)
+        repository.deleteById(id)
+    }
+
+    fun generateReport(): List<TaskByInstitution> {
+        return repository.report()
     }
 }
